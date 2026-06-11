@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-Refresher Manager</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Refresher <span class="pro-badge">FULLSTACK</span></h1>
+            <p>Save and manage your favorite configurations on the cloud.</p>
+        </header>
+
+        <main>
+            <div class="sidebar">
+                <div class="preset-manager glass-panel">
+                    <h3>Saved Presets</h3>
+                    <p class="small-text">Save your current setup to the database.</p>
+                    <div class="preset-controls">
+                        <input type="text" id="preset-name" placeholder="Preset Name (e.g. Daily Blog)">
+                        <button id="save-preset-btn" class="btn primary-btn small-btn">Save</button>
+                    </div>
+                    <ul id="preset-list" class="preset-list">
+                        <li class="loading-text">Loading presets from server...</li>
+                    </ul>
+                </div>
+
+                <div class="controls-panel glass-panel">
+                    <div class="input-group">
+                        <label for="target-url">Target URL</label>
+                        <input type="url" id="target-url" placeholder="https://example.com" required>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="algorithm-select">Refresh Algorithm</label>
+                        <select id="algorithm-select">
+                            <option value="casual">Casual Human (Bell Curve)</option>
+                            <option value="aggressive">Aggressive (Consistent)</option>
+                            <option value="burst">Burst Mode (Rapid + Pause)</option>
+                            <option value="wave">Wave Pattern (Oscillating)</option>
+                        </select>
+                    </div>
+
+                    <div class="interval-group">
+                        <div class="input-group">
+                            <label for="min-interval">Min Interval (s)</label>
+                            <input type="number" id="min-interval" value="10" min="1" required>
+                        </div>
+                        <div class="input-group">
+                            <label for="max-interval">Max Interval (s)</label>
+                            <input type="number" id="max-interval" value="50" min="1" required>
+                        </div>
+                    </div>
+
+                    <div class="action-group">
+                        <button id="start-btn" class="btn primary-btn">Start</button>
+                        <button id="stop-btn" class="btn secondary-btn" disabled>Stop</button>
+                    </div>
+
+                    <div id="status-container" class="status-container hidden">
+                        <div class="status-indicator">
+                            <span class="dot pulse"></span>
+                            <span id="status-text">Refreshing in <span id="countdown">--</span>s...</span>
+                        </div>
+                        <p id="log-text" class="log-text">Waiting to start.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="preview-panel glass-panel">
+                <div class="browser-header">
+                    <div class="browser-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                    <div class="browser-url-bar" id="browser-url-display">
+                        No URL loaded
+                    </div>
+                </div>
+                <div class="iframe-container">
+                    <iframe id="target-frame" src="about:blank" frameborder="0" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+                    <div id="iframe-placeholder" class="iframe-placeholder">
+                        <p>Preview will appear here.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
