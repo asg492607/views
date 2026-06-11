@@ -1,262 +1,361 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // UI Elements
-    const urlInput = document.getElementById('target-url');
-    const algoSelect = document.getElementById('algorithm-select');
-    const minInput = document.getElementById('min-interval');
-    const maxInput = document.getElementById('max-interval');
-    
-    const startBtn = document.getElementById('start-btn');
-    const stopBtn = document.getElementById('stop-btn');
-    const statusContainer = document.getElementById('status-container');
-    const countdownEl = document.getElementById('countdown');
-    const logText = document.getElementById('log-text');
-    
-    const iframe = document.getElementById('target-frame');
-    const iframePlaceholder = document.getElementById('iframe-placeholder');
-    const browserUrlDisplay = document.getElementById('browser-url-display');
 
+    // ── DOM Elements ──────────────────────────────────────────────────────────
+    const urlInput       = document.getElementById('target-url');
+    const algoSelect     = document.getElementById('algorithm-select');
+    const minInput       = document.getElementById('min-interval');
+    const maxInput       = document.getElementById('max-interval');
+    const startBtn       = document.getElementById('start-btn');
+    const stopBtn        = document.getElementById('stop-btn');
+    const statusBox      = document.getElementById('status-box');
+    const countdownEl    = document.getElementById('countdown');
+    const logText        = document.getElementById('log-text');
+    const viewCount      = document.getElementById('view-count');
+    const algoDisplay    = document.getElementById('algo-display');
+    const iframe         = document.getElementById('target-frame');
+    const framePlaceholder = document.getElementById('frame-placeholder');
+    const browserUrlEl   = document.getElementById('browser-url-display');
+    const urlTypeBadge   = document.getElementById('url-type-badge');
+    const urlHint        = document.getElementById('url-hint');
     const presetNameInput = document.getElementById('preset-name');
-    const savePresetBtn = document.getElementById('save-preset-btn');
-    const presetList = document.getElementById('preset-list');
+    const savePresetBtn  = document.getElementById('save-preset-btn');
+    const presetList     = document.getElementById('preset-list');
 
-    // Engine State
-    let isRunning = false;
-    let countdownTimer = null;
-    let refreshTimeout = null;
-    let currentTarget = '';
-    let refreshCount = 0;
-    let burstCounter = 0;
-    let waveDirection = 1;
-    let currentWaveProgress = 0;
+    // ── Engine State ──────────────────────────────────────────────────────────
+    let isRunning       = false;
+    let countdownTimer  = null;
+    let refreshTimeout  = null;
+    let currentEmbedUrl = '';
+    let currentRawUrl   = '';
+    let refreshCount    = 0;
 
-    // --- API & Database Logic ---
-    
-    async function loadPresets() {
-        try {
-            const res = await fetch('/api/presets');
-            if (!res.ok) throw new Error('Failed to fetch');
-            const presets = await res.json();
-            renderPresets(presets);
-        } catch (err) {
-            presetList.innerHTML = '<li class="loading-text">Server not responding. Run the backend!</li>';
-            console.error('API Error:', err);
+    // Per-algorithm state
+    let burstCounter      = 0;
+    let waveDirection     = 1;
+    let waveProgress      = 0;
+
+    // ── YouTube URL Parser ────────────────────────────────────────────────────
+    /**
+     * Returns { type: 'video'|'playlist'|'other', embedUrl: string, label: string }
+     */
+    function parseUrl(raw) {
+        const url = raw.trim();
+
+        // --- YouTube standard watch URL: youtube.com/watch?v=ID ---
+        const videoMatch = url.match(
+            /(?:youtube\.com\/watch\?.*v=|youtu\.be\/)([A-Za-z0-9_-]{11})/
+        );
+        if (videoMatch) {
+            const id = videoMatch[1];
+            return {
+                type: 'video',
+                embedUrl: `https://www.youtube.com/embed/${id}?autoplay=1&rel=0`,
+                label: `YouTube Video: ${id}`
+            };
         }
+
+        // --- YouTube Shorts: youtube.com/shorts/ID ---
+        const shortsMatch = url.match(/youtube\.com\/shorts\/([A-Za-z0-9_-]{11})/);
+        if (shortsMatch) {
+            const id = shortsMatch[1];
+            return {
+                type: 'video',
+                embedUrl: `https://www.youtube.com/embed/${id}?autoplay=1&rel=0`,
+                label: `YouTube Short: ${id}`
+            };
+        }
+
+        // --- YouTube Playlist: youtube.com/playlist?list=ID ---
+        const playlistMatch = url.match(/[?&]list=([A-Za-z0-9_-]+)/);
+        if (playlistMatch && url.includes('youtube.com')) {
+            const id = playlistMatch[1];
+            return {
+                type: 'playlist',
+                embedUrl: `https://www.youtube.com/embed/videoseries?list=${id}&autoplay=1&rel=0`,
+                label: `YouTube Playlist: ${id}`
+            };
+        }
+
+        // --- YouTube embed URL already (user pasted embed link directly) ---
+        if (url.includes('youtube.com/embed/')) {
+            return { type: 'video', embedUrl: url, label: 'YouTube Embed' };
+        }
+
+        // --- Normal URL ---
+        return { type: 'other', embedUrl: url, label: url };
     }
 
-    async function savePreset() {
-        const name = presetNameInput.value.trim();
-        if (!name) return alert("Please enter a name for the preset.");
-        if (!urlInput.value.trim()) return alert("Target URL is required to save a preset.");
-
-        const presetData = {
-            name: name,
-            url: urlInput.value.trim(),
-            algorithm: algoSelect.value,
-            min: parseInt(minInput.value) || 10,
-            max: parseInt(maxInput.value) || 50
-        };
-
-        savePresetBtn.disabled = true;
-        savePresetBtn.textContent = '...';
-
-        try {
-            const res = await fetch('/api/presets', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(presetData)
-            });
-            if (res.ok) {
-                presetNameInput.value = '';
-                await loadPresets();
-            }
-        } catch (err) {
-            alert("Failed to save preset. Is the backend running?");
-        } finally {
-            savePresetBtn.disabled = false;
-            savePresetBtn.textContent = 'Save';
-        }
-    }
-
-    async function deletePreset(id, e) {
-        e.stopPropagation(); // Prevent loading the preset when clicking delete
-        try {
-            await fetch(`/api/presets/${id}`, { method: 'DELETE' });
-            await loadPresets();
-        } catch (err) {
-            console.error(err);
-        }
-    }
-
-    function renderPresets(presets) {
-        if (presets.length === 0) {
-            presetList.innerHTML = '<li class="loading-text">No saved presets yet.</li>';
+    // Show/hide the hint and badge as the user types
+    urlInput.addEventListener('input', () => {
+        const raw = urlInput.value.trim();
+        if (!raw) {
+            urlHint.className = 'url-hint hidden';
+            urlTypeBadge.className = 'url-type-badge hidden';
             return;
         }
+        const parsed = parseUrl(raw);
+        if (parsed.type === 'video') {
+            urlHint.textContent = `✅ YouTube video detected — will embed automatically.`;
+            urlHint.className = 'url-hint youtube';
+            urlTypeBadge.textContent = '▶ YouTube';
+            urlTypeBadge.className = 'url-type-badge';
+        } else if (parsed.type === 'playlist') {
+            urlHint.textContent = `✅ YouTube playlist detected — will embed automatically.`;
+            urlHint.className = 'url-hint playlist';
+            urlTypeBadge.textContent = '▶ Playlist';
+            urlTypeBadge.className = 'url-type-badge';
+        } else {
+            urlHint.textContent = `🔗 Standard URL — will load in preview frame.`;
+            urlHint.className = 'url-hint normal';
+            urlTypeBadge.className = 'url-type-badge hidden';
+        }
+    });
 
-        presetList.innerHTML = '';
-        presets.forEach(p => {
-            const li = document.createElement('li');
-            li.className = 'preset-item';
-            li.innerHTML = `
-                <div class="preset-info">
-                    <h4>${p.name}</h4>
-                    <span>${p.algorithm.toUpperCase()} | ${p.min}s - ${p.max}s</span>
-                </div>
-                <button class="delete-btn" title="Delete">×</button>
-            `;
-            
-            // Load preset
-            li.addEventListener('click', () => {
-                if (isRunning) return alert("Stop the current run before loading a preset.");
-                urlInput.value = p.url;
-                algoSelect.value = p.algorithm;
-                minInput.value = p.min;
-                maxInput.value = p.max;
-                
-                // Highlight briefly
-                li.style.borderColor = '#6366f1';
-                setTimeout(() => li.style.borderColor = '', 300);
-            });
-
-            // Delete preset
-            li.querySelector('.delete-btn').addEventListener('click', (e) => deletePreset(p.id, e));
-            
-            presetList.appendChild(li);
-        });
-    }
-
-    savePresetBtn.addEventListener('click', savePreset);
-    loadPresets(); // Initial load
-
-    // --- Refresh Engine Logic ---
-
+    // ── Algorithms ────────────────────────────────────────────────────────────
     function getNextInterval(min, max, algorithm) {
-        let nextInterval = min;
-        let specialMessage = null;
-
+        let interval, msg;
         switch (algorithm) {
-            case 'casual':
-                const r1 = Math.random(), r2 = Math.random(), r3 = Math.random();
-                nextInterval = Math.floor(((r1 + r2 + r3) / 3) * (max - min + 1)) + min;
+            case 'casual': {
+                const avg = (Math.random() + Math.random() + Math.random()) / 3;
+                interval = Math.floor(avg * (max - min + 1)) + min;
                 if (Math.random() < 0.15) {
-                    nextInterval += Math.floor(Math.random() * 60) + 30;
-                    specialMessage = "Taking a casual coffee break...";
+                    const extra = Math.floor(Math.random() * 60) + 30;
+                    interval += extra;
+                    msg = `☕ Coffee break (+${extra}s extra)`;
+                } else {
+                    msg = 'Normal casual interval';
                 }
                 break;
-            case 'aggressive':
-                const aggRandom = Math.pow(Math.random(), 2);
-                nextInterval = Math.floor(aggRandom * (max - min + 1)) + min;
+            }
+            case 'aggressive': {
+                interval = Math.floor(Math.pow(Math.random(), 2) * (max - min + 1)) + min;
+                msg = 'Aggressive — leaning fast';
                 break;
-            case 'burst':
+            }
+            case 'burst': {
                 burstCounter++;
                 if (burstCounter >= 5) {
                     burstCounter = 0;
-                    nextInterval = max + Math.floor(Math.random() * 60) + 60;
-                    specialMessage = "Burst complete. Taking a long rest...";
+                    interval = max + Math.floor(Math.random() * 60) + 60;
+                    msg = `💥 Burst done — long rest (${interval}s)`;
                 } else {
-                    nextInterval = min + Math.floor(Math.random() * 3);
-                    specialMessage = `Rapid burst ${burstCounter}/5...`;
+                    interval = min + Math.floor(Math.random() * 3);
+                    msg = `⚡ Rapid burst ${burstCounter}/5`;
                 }
                 break;
-            case 'wave':
-                currentWaveProgress += (0.1 * waveDirection);
-                if (currentWaveProgress >= 1) { currentWaveProgress = 1; waveDirection = -1; }
-                else if (currentWaveProgress <= 0) { currentWaveProgress = 0; waveDirection = 1; }
-                const easeProgress = currentWaveProgress < 0.5 ? 2 * currentWaveProgress * currentWaveProgress : -1 + (4 - 2 * currentWaveProgress) * currentWaveProgress;
-                nextInterval = min + Math.floor(easeProgress * (max - min));
-                specialMessage = waveDirection === 1 ? "Wave: Slowing down..." : "Wave: Speeding up...";
+            }
+            case 'wave': {
+                waveProgress += 0.1 * waveDirection;
+                if (waveProgress >= 1) { waveProgress = 1; waveDirection = -1; }
+                else if (waveProgress <= 0) { waveProgress = 0; waveDirection = 1; }
+                const eased = waveProgress < 0.5
+                    ? 2 * waveProgress * waveProgress
+                    : -1 + (4 - 2 * waveProgress) * waveProgress;
+                interval = min + Math.floor(eased * (max - min));
+                msg = waveDirection === 1 ? '🌊 Wave slowing down…' : '🌊 Wave speeding up…';
                 break;
-
-            case 'spike':
-                // 20% chance of a very fast turbo spike
+            }
+            case 'spike': {
                 if (Math.random() < 0.20) {
-                    nextInterval = Math.max(1, min - Math.floor(Math.random() * Math.floor(min / 2)));
-                    specialMessage = "⚡ Turbo spike!";
+                    interval = Math.max(1, min - Math.floor(Math.random() * Math.floor(min / 2)));
+                    msg = '🚀 Turbo spike!';
                 } else {
-                    const spikeR = (Math.random() + Math.random()) / 2;
-                    nextInterval = Math.floor(spikeR * (max - min + 1)) + min;
-                    specialMessage = "Normal paced";
+                    interval = Math.floor(((Math.random() + Math.random()) / 2) * (max - min + 1)) + min;
+                    msg = 'Normal paced';
                 }
                 break;
+            }
+            default:
+                interval = min;
+                msg = 'Default';
         }
-        return { seconds: Math.max(1, nextInterval), message: specialMessage };
+        return { seconds: Math.max(1, interval), msg };
     }
 
-    function updateLog(message) {
-        logText.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-    }
-
-    function refreshFrame() {
+    // ── Refresh Logic ─────────────────────────────────────────────────────────
+    function doRefresh() {
         if (!isRunning) return;
-        const token = Math.random().toString(36).substring(2, 15);
-        const cacheBuster = currentTarget.includes('?') ? `&_cb=${Date.now()}&_rt=${token}` : `?_cb=${Date.now()}&_rt=${token}`;
-        
+
+        // For cache-busting on normal URLs, append a token
+        let src;
+        if (currentEmbedUrl.includes('youtube.com/embed')) {
+            // YouTube embed — append autoplay + unique ts so it restarts
+            const sep = currentEmbedUrl.includes('?') ? '&' : '?';
+            src = `${currentEmbedUrl}${sep}_ts=${Date.now()}`;
+        } else {
+            const token = Math.random().toString(36).substring(2);
+            const sep = currentEmbedUrl.includes('?') ? '&' : '?';
+            src = `${currentEmbedUrl}${sep}_cb=${Date.now()}&_t=${token}`;
+        }
+
+        // Unload first, then reload after 100ms (forces true refresh)
         iframe.src = 'about:blank';
         setTimeout(() => {
             if (!isRunning) return;
-            iframe.src = currentTarget + cacheBuster;
+            iframe.src = src;
             refreshCount++;
-            browserUrlDisplay.textContent = currentTarget;
-            scheduleNextRefresh();
-        }, 100);
+            viewCount.textContent = refreshCount;
+            browserUrlEl.textContent = currentRawUrl;
+            scheduleNext();
+        }, 150);
     }
 
-    function scheduleNextRefresh() {
+    function scheduleNext() {
         if (!isRunning) return;
-        const min = parseInt(minInput.value) || 10;
-        const max = parseInt(maxInput.value) || 50;
-        const intervalData = getNextInterval(min, max, algoSelect.value);
-        let secondsLeft = intervalData.seconds;
-        
-        countdownEl.textContent = secondsLeft;
-        updateLog(intervalData.message ? `${intervalData.message} Next in ${secondsLeft}s. (Views: ${refreshCount})` : `Normal interval. Next in ${secondsLeft}s. (Views: ${refreshCount})`);
-
         clearInterval(countdownTimer);
         clearTimeout(refreshTimeout);
 
+        const min = parseInt(minInput.value) || 10;
+        const max = parseInt(maxInput.value) || 50;
+        const { seconds, msg } = getNextInterval(min, max, algoSelect.value);
+
+        let left = seconds;
+        countdownEl.textContent = left;
+        log(`${msg} — next in ${seconds}s`);
+
         countdownTimer = setInterval(() => {
-            secondsLeft--;
-            countdownEl.textContent = Math.max(0, secondsLeft);
-            if (secondsLeft <= 0) clearInterval(countdownTimer);
+            left--;
+            countdownEl.textContent = Math.max(0, left);
+            if (left <= 0) clearInterval(countdownTimer);
         }, 1000);
 
-        refreshTimeout = setTimeout(refreshFrame, intervalData.seconds * 1000);
+        refreshTimeout = setTimeout(doRefresh, seconds * 1000);
     }
 
+    function log(msg) {
+        const ts = new Date().toLocaleTimeString();
+        logText.textContent = `[${ts}] ${msg}`;
+    }
+
+    // ── Start / Stop ──────────────────────────────────────────────────────────
     startBtn.addEventListener('click', () => {
-        let url = urlInput.value.trim();
-        if (!url) return alert('Please enter a target URL.');
-        if (!url.startsWith('http')) url = 'https://' + url;
-        urlInput.value = url;
+        let raw = urlInput.value.trim();
+        if (!raw) return alert('Please enter a URL.');
+        if (!raw.startsWith('http')) raw = 'https://' + raw;
+        urlInput.value = raw;
 
-        if (parseInt(minInput.value) > parseInt(maxInput.value)) return alert('Min > Max error.');
+        const min = parseInt(minInput.value);
+        const max = parseInt(maxInput.value);
+        if (min > max) return alert('Min interval must be ≤ Max interval.');
 
-        isRunning = true; currentTarget = url; refreshCount = 0; burstCounter = 0;
-        
-        startBtn.disabled = true; stopBtn.disabled = false;
+        const parsed = parseUrl(raw);
+        currentRawUrl   = raw;
+        currentEmbedUrl = parsed.embedUrl;
+
+        // Reset state
+        isRunning     = true;
+        refreshCount  = 0;
+        burstCounter  = 0;
+        waveProgress  = 0;
+        waveDirection = 1;
+
+        startBtn.disabled = true;
+        stopBtn.disabled  = false;
         [urlInput, minInput, maxInput, algoSelect].forEach(el => el.disabled = true);
 
-        statusContainer.classList.remove('hidden');
-        iframe.classList.add('active');
-        iframePlaceholder.style.display = 'none';
+        statusBox.classList.remove('hidden');
+        framePlaceholder.style.display = 'none';
+        viewCount.textContent  = 0;
+        algoDisplay.textContent = algoSelect.options[algoSelect.selectedIndex].text.split(' ').slice(1, 3).join(' ');
 
-        updateLog(`Started [${algoSelect.options[algoSelect.selectedIndex].text}]`);
-        refreshFrame();
+        log(`Started [${parsed.label}]`);
+        doRefresh();
     });
 
     stopBtn.addEventListener('click', () => {
         isRunning = false;
-        clearInterval(countdownTimer); clearTimeout(refreshTimeout);
-        
-        startBtn.disabled = false; stopBtn.disabled = true;
+        clearInterval(countdownTimer);
+        clearTimeout(refreshTimeout);
+
+        startBtn.disabled = false;
+        stopBtn.disabled  = true;
         [urlInput, minInput, maxInput, algoSelect].forEach(el => el.disabled = false);
 
-        countdownEl.textContent = '--';
-        updateLog(`Stopped. Total successful refreshes: ${refreshCount}`);
-        
-        iframe.classList.remove('active');
         iframe.src = 'about:blank';
-        iframePlaceholder.style.display = 'flex';
-        browserUrlDisplay.textContent = 'Stopped';
+        framePlaceholder.style.display = 'flex';
+        browserUrlEl.textContent = 'Stopped';
+        countdownEl.textContent = '--';
+        log(`Stopped after ${refreshCount} refreshes.`);
     });
+
+    // ── Preset API ────────────────────────────────────────────────────────────
+    async function loadPresets() {
+        try {
+            const res = await fetch('/api/presets');
+            const presets = await res.json();
+            renderPresets(presets);
+        } catch {
+            presetList.innerHTML = '<li class="hint-text" style="color:#f87171">⚠ Could not reach server.</li>';
+        }
+    }
+
+    function renderPresets(presets) {
+        if (!presets.length) {
+            presetList.innerHTML = '<li class="hint-text">No presets saved yet.</li>';
+            return;
+        }
+        presetList.innerHTML = '';
+        presets.forEach(p => {
+            const li = document.createElement('li');
+            li.className = 'preset-item';
+            const algoLabel = p.algorithm.charAt(0).toUpperCase() + p.algorithm.slice(1);
+            li.innerHTML = `
+                <div class="preset-info">
+                    <h4>${p.name}</h4>
+                    <span>${algoLabel} | ${p.min}s–${p.max}s</span>
+                </div>
+                <button class="del-btn" title="Delete preset">×</button>`;
+            li.addEventListener('click', () => {
+                if (isRunning) return alert('Stop the current run before loading a preset.');
+                urlInput.value       = p.url;
+                algoSelect.value     = p.algorithm;
+                minInput.value       = p.min;
+                maxInput.value       = p.max;
+                // Trigger URL hint
+                urlInput.dispatchEvent(new Event('input'));
+                li.style.borderColor = '#6366f1';
+                setTimeout(() => li.style.borderColor = '', 500);
+            });
+            li.querySelector('.del-btn').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await fetch(`/api/presets/${p.id}`, { method: 'DELETE' });
+                loadPresets();
+            });
+            presetList.appendChild(li);
+        });
+    }
+
+    savePresetBtn.addEventListener('click', async () => {
+        const name = presetNameInput.value.trim();
+        const url  = urlInput.value.trim();
+        if (!name) return alert('Give your preset a name first.');
+        if (!url)  return alert('Enter a URL first.');
+
+        savePresetBtn.disabled = true;
+        savePresetBtn.textContent = '…';
+        try {
+            const res = await fetch('/api/presets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name, url,
+                    algorithm: algoSelect.value,
+                    min: parseInt(minInput.value) || 10,
+                    max: parseInt(maxInput.value) || 50
+                })
+            });
+            if (res.ok) {
+                presetNameInput.value = '';
+                loadPresets();
+            }
+        } catch {
+            alert('Failed to save — is the server running?');
+        } finally {
+            savePresetBtn.disabled = false;
+            savePresetBtn.textContent = 'Save';
+        }
+    });
+
+    // Initial preset load
+    loadPresets();
 });
