@@ -166,6 +166,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 nextInterval = min + Math.floor(easeProgress * (max - min));
                 specialMessage = waveDirection === 1 ? "Wave: Slowing down..." : "Wave: Speeding up...";
                 break;
+
+            case 'spike':
+                // 20% chance of a very fast turbo spike
+                if (Math.random() < 0.20) {
+                    nextInterval = Math.max(1, min - Math.floor(Math.random() * Math.floor(min / 2)));
+                    specialMessage = "⚡ Turbo spike!";
+                } else {
+                    const spikeR = (Math.random() + Math.random()) / 2;
+                    nextInterval = Math.floor(spikeR * (max - min + 1)) + min;
+                    specialMessage = "Normal paced";
+                }
+                break;
         }
         return { seconds: Math.max(1, nextInterval), message: specialMessage };
     }
