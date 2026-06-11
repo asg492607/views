@@ -4,91 +4,123 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Auto-Refresher Manager</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="description" content="Auto-refresh any link or YouTube video with smart algorithms. Save presets to the cloud.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="app-container">
         <header>
-            <h1>Refresher <span class="pro-badge">FULLSTACK</span></h1>
-            <p>Save and manage your favorite configurations on the cloud.</p>
+            <h1>Auto-Refresher <span class="badge">FULLSTACK</span></h1>
+            <p>Smart link refresher with YouTube embed support & cloud-saved presets.</p>
         </header>
 
         <main>
+            <!-- LEFT SIDEBAR -->
             <div class="sidebar">
-                <div class="preset-manager glass-panel">
-                    <h3>Saved Presets</h3>
-                    <p class="small-text">Save your current setup to the database.</p>
-                    <div class="preset-controls">
-                        <input type="text" id="preset-name" placeholder="Preset Name (e.g. Daily Blog)">
-                        <button id="save-preset-btn" class="btn primary-btn small-btn">Save</button>
+
+                <!-- Saved Presets -->
+                <div class="glass-panel preset-panel">
+                    <div class="panel-title">
+                        <span class="panel-icon">🗂</span>
+                        <h3>Saved Presets</h3>
+                    </div>
+                    <p class="hint-text">Save your current config to the cloud.</p>
+                    <div class="preset-save-row">
+                        <input type="text" id="preset-name" placeholder="Name (e.g. My Video)">
+                        <button id="save-preset-btn" class="btn primary-btn tight-btn">Save</button>
                     </div>
                     <ul id="preset-list" class="preset-list">
-                        <li class="loading-text">Loading presets from server...</li>
+                        <li class="hint-text">Loading from server…</li>
                     </ul>
                 </div>
 
-                <div class="controls-panel glass-panel">
+                <!-- Controls -->
+                <div class="glass-panel controls-panel">
+
                     <div class="input-group">
-                        <label for="target-url">Target URL</label>
-                        <input type="url" id="target-url" placeholder="https://example.com" required>
+                        <label for="target-url">URL or YouTube Link</label>
+                        <input type="url" id="target-url" placeholder="https://youtube.com/watch?v=...">
+                        <div id="url-hint" class="url-hint hidden"></div>
                     </div>
 
                     <div class="input-group">
                         <label for="algorithm-select">Refresh Algorithm</label>
                         <select id="algorithm-select">
-                            <option value="casual">Casual Human (Bell Curve)</option>
-                            <option value="aggressive">Aggressive (Consistent)</option>
-                            <option value="burst">Burst Mode (Rapid + Pause)</option>
-                            <option value="wave">Wave Pattern (Oscillating)</option>
-                            <option value="spike">Random Spike (20% Turbo Boost)</option>
+                            <option value="casual">🧠 Casual Human (Bell Curve)</option>
+                            <option value="aggressive">⚡ Aggressive (Fast & Consistent)</option>
+                            <option value="burst">💥 Burst Mode (5 rapid + long rest)</option>
+                            <option value="wave">🌊 Wave Pattern (Oscillating)</option>
+                            <option value="spike">🚀 Random Spike (20% turbo)</option>
                         </select>
                     </div>
 
-                    <div class="interval-group">
+                    <div class="interval-row">
                         <div class="input-group">
-                            <label for="min-interval">Min Interval (s)</label>
-                            <input type="number" id="min-interval" value="10" min="1" required>
+                            <label for="min-interval">Min (sec)</label>
+                            <input type="number" id="min-interval" value="10" min="1">
                         </div>
                         <div class="input-group">
-                            <label for="max-interval">Max Interval (s)</label>
-                            <input type="number" id="max-interval" value="50" min="1" required>
+                            <label for="max-interval">Max (sec)</label>
+                            <input type="number" id="max-interval" value="50" min="1">
                         </div>
                     </div>
 
-                    <div class="action-group">
-                        <button id="start-btn" class="btn primary-btn">Start</button>
-                        <button id="stop-btn" class="btn secondary-btn" disabled>Stop</button>
+                    <div class="action-row">
+                        <button id="start-btn" class="btn primary-btn">▶ Start</button>
+                        <button id="stop-btn" class="btn danger-btn" disabled>■ Stop</button>
                     </div>
 
-                    <div id="status-container" class="status-container hidden">
-                        <div class="status-indicator">
-                            <span class="dot pulse"></span>
-                            <span id="status-text">Refreshing in <span id="countdown">--</span>s...</span>
+                    <div id="status-box" class="status-box hidden">
+                        <div class="status-top">
+                            <span class="pulse-dot"></span>
+                            <span>Next refresh in <strong id="countdown">--</strong>s</span>
                         </div>
-                        <p id="log-text" class="log-text">Waiting to start.</p>
+                        <div class="stats-row">
+                            <div class="stat-chip">
+                                <span class="stat-label">Views</span>
+                                <span class="stat-value" id="view-count">0</span>
+                            </div>
+                            <div class="stat-chip">
+                                <span class="stat-label">Algorithm</span>
+                                <span class="stat-value" id="algo-display">—</span>
+                            </div>
+                        </div>
+                        <p id="log-text" class="log-text">Waiting to start...</p>
                     </div>
+
                 </div>
             </div>
 
+            <!-- RIGHT PREVIEW -->
             <div class="preview-panel glass-panel">
-                <div class="browser-header">
+                <div class="browser-bar">
                     <div class="browser-dots">
-                        <span></span><span></span><span></span>
+                        <span class="dot-red"></span>
+                        <span class="dot-yellow"></span>
+                        <span class="dot-green"></span>
                     </div>
-                    <div class="browser-url-bar" id="browser-url-display">
-                        No URL loaded
-                    </div>
+                    <div class="browser-url" id="browser-url-display">No URL loaded</div>
+                    <div id="url-type-badge" class="url-type-badge hidden">YouTube</div>
                 </div>
-                <div class="iframe-container">
-                    <iframe id="target-frame" src="about:blank" frameborder="0" sandbox="allow-scripts allow-forms"></iframe>
-                    <div id="iframe-placeholder" class="iframe-placeholder">
-                        <p>Preview will appear here.</p>
+                <div class="frame-wrapper">
+                    <iframe
+                        id="target-frame"
+                        src="about:blank"
+                        frameborder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowfullscreen>
+                    </iframe>
+                    <div id="frame-placeholder" class="frame-placeholder">
+                        <div class="placeholder-icon">🔗</div>
+                        <p>Enter a URL and click <strong>Start</strong></p>
+                        <small>Supports any website or YouTube video/playlist.</small>
                     </div>
                 </div>
             </div>
         </main>
     </div>
+
     <script src="script.js"></script>
 </body>
 </html>
